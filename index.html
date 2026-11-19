@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#153d32">
+<title>リスト</title>
+<style>
+  :root { --board:#153d32; --chalk:#f4f5ee; --yellow:#f4d85a; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; min-height:100%; }
+  body {
+    background: radial-gradient(ellipse at 50% 40%, #1c493b 0%, var(--board) 65%, #0d2b24 100%);
+    color:var(--chalk); font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    overflow:hidden; min-height:100vh; min-height:100dvh;
+  }
+  body::before { content:""; position:fixed; inset:0; pointer-events:none; opacity:.09;
+    background-image: repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,.08) 4px, transparent 5px); }
+  .app { height:100vh; height:100dvh; display:flex; flex-direction:column; padding:clamp(16px,3vw,38px); gap:clamp(16px,3vw,28px); }
+  header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-shrink:0; }
+  h1 { font-size:clamp(30px,5vw,54px); margin:0; font-weight:700; letter-spacing:.14em; text-shadow:0 0 5px #ffffff35; }
+  .clock { font-size:clamp(20px,3vw,36px); font-variant-numeric:tabular-nums; letter-spacing:.04em; white-space:nowrap; border:2px solid #f4f5ee; border-radius:12px; padding:8px 16px; box-shadow:0 0 8px #fff4; }
+  .main { display:grid; grid-template-columns:minmax(0,1fr) minmax(118px,16%); gap:clamp(12px,2vw,24px); flex:1; min-height:0; }
+  .list-wrap { min-height:0; display:flex; flex-direction:column; gap:12px; }
+  .list { overflow-y:auto; min-height:0; flex:1; padding:4px 8px 10px 4px; display:flex; flex-direction:column; gap:clamp(12px,2vw,20px); scrollbar-width:thin; scrollbar-color:#e8e8e880 transparent; }
+  .task { flex-shrink:0; position:relative; border:2px solid rgba(255,255,255,.9); border-radius:16px; min-height:clamp(74px,12vh,120px); display:flex; align-items:center; overflow:hidden; cursor:pointer; color:#fff; box-shadow:0 0 8px #ffffff20; transition:transform .15s, background .15s; }
+  .task:hover { transform:translateY(-1px); background:#ffffff08; }
+  .task.selected:not(.first) { box-shadow:0 0 0 2px #ffffff30, 0 0 12px #fff5; }
+  .task.first { border-color:var(--yellow); animation:borderBlink 1.15s steps(1,end) infinite; box-shadow:0 0 9px #f4d85a55; }
+  .task.first.selected { outline:2px solid #fff; outline-offset:3px; }
+  @keyframes borderBlink { 0%,49% {border-color:var(--yellow); box-shadow:0 0 10px #f4d85a55;} 50%,100% {border-color:#fff; box-shadow:0 0 10px #ffffff45;} }
+  .marquee { width:100%; overflow:hidden; white-space:nowrap; font-size:clamp(20px,3vw,34px); font-weight:600; letter-spacing:.08em; text-shadow:0 0 4px #fff5; padding:16px 0; }
+  .marquee span { display:inline-block; min-width:100%; width:max-content; animation:flow 14s linear infinite; padding-left:100%; }
+  .task:hover .marquee span { animation-play-state:paused; }
+  @keyframes flow { from {transform:translateX(0)} to {transform:translateX(-100%)} }
+  .side { display:flex; flex-direction:column; gap:12px; min-height:0; }
+  button { background:transparent; color:#fff; border:2px solid #fff; border-radius:14px; font:inherit; letter-spacing:.1em; cursor:pointer; transition:background .15s, transform .15s; text-shadow:0 0 4px #fff5; box-shadow:0 0 8px #fff2; }
+  button:hover { background:#ffffff14; } button:active { transform:scale(.97); }
+  #complete { min-height:clamp(90px,14vh,140px); font-size:clamp(18px,2.4vw,28px); }
+  #add { min-height:clamp(70px,11vh,110px); font-size:clamp(18px,2.4vw,28px); }
+  .counter { color:#ffffffb0; font-size:14px; text-align:center; padding-top:2px; }
+  .modal-backdrop { position:fixed; inset:0; z-index:20; display:none; align-items:center; justify-content:center; padding:20px; background:#061a14cc; backdrop-filter:blur(4px); }
+  .modal-backdrop.open { display:flex; }
+  .modal { width:min(520px,100%); border:2px solid #f4f5ee; border-radius:18px; padding:24px; background:#153d32; color:#fff; box-shadow:0 0 24px #ffffff30; }
+  .modal h2 { margin:0 0 18px; font-size:24px; letter-spacing:.1em; }
+  .modal input { display:block; width:100%; background:#0d2b24; color:#fff; border:2px solid #ffffff; border-radius:10px; padding:14px; font:inherit; font-size:18px; outline:none; }
+  .modal input:focus { border-color:#f4d85a; box-shadow:0 0 10px #f4d85a55; }
+  .modal-actions { display:flex; justify-content:flex-end; gap:12px; margin-top:18px; }
+  .modal-actions button { padding:10px 18px; font-size:16px; }
+  #modalAdd { border-color:#f4d85a; color:#f4d85a; }
+  .empty { border:2px dashed #ffffff55; border-radius:14px; padding:28px; color:#ffffff9c; text-align:center; font-size:18px; }
+  @media(max-width:600px) { .app {padding:14px;gap:14px;} .main {grid-template-columns:minmax(0,1fr) 88px;} .clock {padding:6px 10px;} #complete,#add {font-size:16px; padding:6px;} .task {border-radius:12px;} }
+</style>
+</head>
+<body>
+<div class="app">
+  <header><h1>リスト</h1><div class="clock" id="clock">--:--</div></header>
+  <main class="main">
+    <section class="list-wrap"><div class="list" id="list" aria-label="タスクリスト"></div></section>
+    <aside class="side">
+      <button id="complete" type="button">完了</button>
+      <div class="counter" id="counter">完了 0</div>
+      <button id="add" type="button">＋ 追加</button>
+    </aside>
+  </main>
+</div>
+<div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal">
+    <h2 id="modalTitle">リストを追加</h2>
+    <input id="taskInput" type="text" maxlength="160" placeholder="やることを入力" autocomplete="off">
+    <div class="modal-actions">
+      <button id="modalCancel" type="button">キャンセル</button>
+      <button id="modalAdd" type="button">追加</button>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  const STORAGE_KEY = 'chalkboard-tasks-v1';
+  const listEl = document.getElementById('list');
+  const clockEl = document.getElementById('clock');
+  const counterEl = document.getElementById('counter');
+  const modalBackdrop = document.getElementById('modalBackdrop');
+  const taskInput = document.getElementById('taskInput');
+  let state = { tasks: [], completed: 0, selectedId: null };
+  try { const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (saved && Array.isArray(saved.tasks)) state = {...state, ...saved}; } catch (_) {}
+  const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  function updateClock() { clockEl.textContent = new Intl.DateTimeFormat('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date()); }
+  function render() {
+    listEl.innerHTML = '';
+    counterEl.textContent = `完了 ${state.completed || 0}`;
+    if (!state.tasks.length) { const empty=document.createElement('div'); empty.className='empty'; empty.textContent='＋ 追加からリストを書き込む'; listEl.appendChild(empty); return; }
+    state.tasks.forEach((task,index) => {
+      const row=document.createElement('div'); row.className='task'+(index===0?' first':'')+(task.id===state.selectedId?' selected':''); row.setAttribute('role','button'); row.setAttribute('tabindex','0'); row.setAttribute('aria-label',task.text);
+      const marquee=document.createElement('div'); marquee.className='marquee'; const text=document.createElement('span'); text.textContent=task.text; marquee.appendChild(text); row.appendChild(marquee);
+      row.addEventListener('click',()=>{state.selectedId=task.id; save(); render();});
+      row.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();state.selectedId=task.id;save();render();}});
+      listEl.appendChild(row);
+    });
+  }
+  function openModal() { modalBackdrop.classList.add('open'); taskInput.value=''; setTimeout(()=>taskInput.focus(), 50); }
+  function closeModal() { modalBackdrop.classList.remove('open'); }
+  function addTask() {
+    const text=taskInput.value.trim(); if(!text) { taskInput.focus(); return; }
+    const task={id:Date.now().toString()+Math.random().toString(16).slice(2),text}; state.tasks.push(task); state.selectedId=task.id; save(); render(); closeModal();
+  }
+  document.getElementById('add').addEventListener('click',openModal);
+  document.getElementById('modalCancel').addEventListener('click',closeModal);
+  document.getElementById('modalAdd').addEventListener('click',addTask);
+  taskInput.addEventListener('keydown',e=>{ if(e.key==='Enter') addTask(); if(e.key==='Escape') closeModal(); });
+  modalBackdrop.addEventListener('click',e=>{ if(e.target===modalBackdrop) closeModal(); });
+  document.getElementById('complete').addEventListener('click',()=>{
+    if(!state.selectedId) { alert('完了するリストを選択してください'); return; }
+    state.tasks=state.tasks.filter(t=>t.id!==state.selectedId); state.completed=(state.completed||0)+1; state.selectedId=state.tasks[0]?.id||null; save(); render();
+  });
+  updateClock(); setInterval(updateClock,1000); render();
+})();
+</script>
+</body>
+</html>
