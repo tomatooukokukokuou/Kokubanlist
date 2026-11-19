@@ -49,7 +49,14 @@
   .modal-actions button { padding:10px 18px; font-size:16px; }
   #modalAdd { border-color:#f4d85a; color:#f4d85a; }
   .empty { border:2px dashed #ffffff55; border-radius:14px; padding:28px; color:#ffffff9c; text-align:center; font-size:18px; }
-  @media(max-width:600px) { .app {padding:14px;gap:14px;} .main {grid-template-columns:minmax(0,1fr) 88px;} .clock {padding:6px 10px;} #complete,#add {font-size:16px; padding:6px;} .task {border-radius:12px;} }
+  .music-panel { border:2px solid #ffffff; border-radius:14px; padding:10px; display:flex; flex-direction:column; gap:8px; box-shadow:0 0 8px #fff2; }
+  .music-title { font-size:13px; text-align:center; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .music-controls { display:flex; gap:6px; }
+  .music-controls button { flex:1; padding:8px 4px; font-size:14px; letter-spacing:0; }
+  .music-panel button.active { border-color:var(--yellow); color:var(--yellow); }
+  #mp3Picker { display:none; }
+  .music-hint { font-size:11px; line-height:1.4; text-align:center; color:#ffffffa8; }
+  @media(max-width:600px) { .app {padding:14px;gap:14px;} .main {grid-template-columns:minmax(0,1fr) 88px;} .clock {padding:6px 10px;} #complete,#add {font-size:16px; padding:6px;} .task {border-radius:12px;} .music-panel {padding:6px;gap:6px;} .music-controls button {font-size:12px;padding:7px 2px;} .music-title {font-size:11px;} }
 </style>
 </head>
 <body>
@@ -61,6 +68,13 @@
       <button id="complete" type="button">完了</button>
       <div class="counter" id="counter">完了 0</div>
       <button id="add" type="button">＋ 追加</button>
+      <section class="music-panel" aria-label="MP3プレイヤー">
+        <div class="music-title" id="musicTitle">MP3未選択</div>
+        <div class="music-controls"><button id="pickMp3" type="button">曲選択</button><button id="playMp3" type="button" disabled>▶</button></div>
+        <div class="music-controls"><button id="repeatMp3" type="button" aria-pressed="false">↻ リピート</button></div>
+        <div class="music-hint" id="musicHint">端末内のMP3を選択</div>
+        <input id="mp3Picker" type="file" accept="audio/mpeg,audio/mp3,.mp3">
+      </section>
     </aside>
   </main>
 </div>
@@ -85,7 +99,27 @@
   let state = { tasks: [], completed: 0, selectedId: null };
   try { const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)); if (saved && Array.isArray(saved.tasks)) state = {...state, ...saved}; } catch (_) {}
   const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  function updateClock() { clockEl.textContent = new Intl.DateTimeFormat('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date()); }
+  // MP3 player: save selected audio locally in IndexedDB.
+  const audio = new Audio(); audio.preload = 'metadata';
+  const picker = document.getElementById('mp3Picker');
+  const pickBtn = document.getElementById('pickMp3');
+  const playBtn = document.getElementById('playMp3');
+  const repeatBtn = document.getElementById('repeatMp3');
+  const musicTitle = document.getElementById('musicTitle');
+  const musicHint = document.getElementById('musicHint');
+  let mp3Blob=null, mp3Name='', objectUrl=null, repeatOn=false;
+  const DB_NAME='chalkboard-music-db', STORE='mp3';
+  function openMusicDb(){return new Promise((resolve,reject)=>{const req=indexedDB.open(DB_NAME,1);req.onupgradeneeded=()=>req.result.createObjectStore(STORE);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
+  async function storeMusic(blob,name){const db=await openMusicDb();await new Promise((resolve,reject)=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put({blob,name},'selected');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();}
+  async function loadMusic(){try{const db=await openMusicDb();const item=await new Promise((resolve,reject)=>{const req=db.transaction(STORE,'readonly').objectStore(STORE).get('selected');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});db.close();if(item?.blob){mp3Blob=item.blob;mp3Name=item.name||'MP3';setMusicSource();musicHint.textContent='保存済みの曲';}}catch(e){musicHint.textContent='保存曲の読み込みに失敗';}}
+  function setMusicSource(){if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(mp3Blob);audio.src=objectUrl;musicTitle.textContent=mp3Name;playBtn.disabled=false;playBtn.textContent='▶';}
+  pickBtn.addEventListener('click',()=>picker.click());
+  picker.addEventListener('change',async()=>{const file=picker.files?.[0];if(!file)return;if(!file.name.toLowerCase().endsWith('.mp3')&&file.type!=='audio/mpeg'){musicHint.textContent='MP3ファイルを選んでください';picker.value='';return;}mp3Blob=file;mp3Name=file.name;setMusicSource();musicHint.textContent='保存中…';try{await storeMusic(file,file.name);musicHint.textContent='このブラウザに保存済み';}catch(e){musicHint.textContent='再生可能・保存できませんでした';}});
+  playBtn.addEventListener('click',async()=>{if(!audio.src)return;if(audio.paused){try{await audio.play();playBtn.textContent='Ⅱ';musicHint.textContent='再生中';}catch(e){musicHint.textContent='再生できません。もう一度押してください';}}else{audio.pause();playBtn.textContent='▶';musicHint.textContent='一時停止中';}});
+  audio.addEventListener('play',()=>playBtn.textContent='Ⅱ');audio.addEventListener('pause',()=>playBtn.textContent='▶');audio.addEventListener('ended',()=>{if(!repeatOn)musicHint.textContent='再生終了';});
+  repeatBtn.addEventListener('click',()=>{repeatOn=!repeatOn;audio.loop=repeatOn;repeatBtn.classList.toggle('active',repeatOn);repeatBtn.setAttribute('aria-pressed',String(repeatOn));musicHint.textContent=repeatOn?'リピート ON':'リピート OFF';});
+  loadMusic();
+  function updateClock(){clockEl.textContent=new Intl.DateTimeFormat('ja-JP',{hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date());}
   function render() {
     listEl.innerHTML = '';
     counterEl.textContent = `完了 ${state.completed || 0}`;
